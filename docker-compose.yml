@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: codementor-ai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: codementor_ai
+      POSTGRES_USER: codementor
+      POSTGRES_PASSWORD: codementor
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:

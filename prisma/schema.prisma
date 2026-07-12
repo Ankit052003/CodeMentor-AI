@@ -1,0 +1,283 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  MENTOR
+  ADMIN
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum ProgrammingLanguage {
+  JAVASCRIPT
+  TYPESCRIPT
+  PYTHON
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  REVIEWED
+  ARCHIVED
+}
+
+enum ReviewIssueCategory {
+  BUG
+  STYLE
+  COMPLEXITY
+  SECURITY
+  BEST_PRACTICE
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ProgressEventType {
+  ACCOUNT_CREATED
+  SUBMISSION_DRAFTED
+  SUBMISSION_SUBMITTED
+  SUBMISSION_ARCHIVED
+  REVISION_CREATED
+  EXERCISE_COMPLETED
+  MENTOR_COMMENT_CREATED
+  AI_REVIEW_CREATED
+}
+
+enum ExerciseStatus {
+  ASSIGNED
+  COMPLETED
+}
+
+enum ReviewVerificationStatus {
+  PENDING
+  APPROVED
+  OVERRIDDEN
+}
+
+model User {
+  id                 String             @id @default(cuid())
+  name               String
+  email              String             @unique
+  passwordHash       String             @map("password_hash")
+  role               UserRole
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  studentProfile     StudentProfile?
+  mentorProfile      MentorProfile?
+  sessions           Session[]
+  submissions        CodeSubmission[]   @relation("student_submissions")
+  mentorAssignments  MentorAssignment[] @relation("mentor_assignments")
+  studentAssignments MentorAssignment[] @relation("student_assignments")
+  mentorComments     MentorComment[]    @relation("mentor_comments")
+  progressEvents     ProgressEvent[]    @relation("student_progress_events")
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique @map("token_hash")
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model StudentProfile {
+  userId             String                @id @map("user_id")
+  skillLevel         SkillLevel            @map("skill_level")
+  preferredLanguages ProgrammingLanguage[] @map("preferred_languages")
+  learningGoals      String[]              @map("learning_goals")
+  user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("student_profiles")
+}
+
+model MentorProfile {
+  userId              String   @id @map("user_id")
+  expertise           String[]
+  maxAssignedStudents Int      @default(10) @map("max_assigned_students")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mentor_profiles")
+}
+
+model MentorAssignment {
+  id        String   @id @default(cuid())
+  mentorId  String   @map("mentor_id")
+  studentId String   @map("student_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  mentor    User     @relation("mentor_assignments", fields: [mentorId], references: [id], onDelete: Cascade)
+  student   User     @relation("student_assignments", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([mentorId, studentId])
+  @@index([studentId])
+  @@map("mentor_assignments")
+}
+
+model CodeSubmission {
+  id                  String           @id @default(cuid())
+  studentId           String           @map("student_id")
+  title               String
+  language            ProgrammingLanguage
+  topic               String
+  difficulty          Difficulty
+  prompt              String           @db.Text
+  sourceCode          String           @map("source_code") @db.Text
+  sanitizedSourceCode String           @map("sanitized_source_code") @db.Text
+  status              SubmissionStatus @default(DRAFT)
+  submittedAt         DateTime?        @map("submitted_at")
+  archivedAt          DateTime?        @map("archived_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+  student             User             @relation("student_submissions", fields: [studentId], references: [id], onDelete: Cascade)
+  aiReview            AiReview?
+  mentorComments      MentorComment[]
+  revisions           Revision[]
+  exercises           Exercise[]
+
+  @@index([studentId, status, createdAt])
+  @@index([language])
+  @@map("code_submissions")
+}
+
+model AiReview {
+  id                 String                   @id @default(cuid())
+  submissionId       String                   @unique @map("submission_id")
+  summary            String                   @db.Text
+  overallScore       Int                      @map("overall_score")
+  correctnessScore   Int                      @map("correctness_score")
+  readabilityScore   Int                      @map("readability_score")
+  complexityScore    Int                      @map("complexity_score")
+  securityScore      Int                      @map("security_score")
+  verificationStatus ReviewVerificationStatus @default(PENDING) @map("verification_status")
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  submission         CodeSubmission           @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  issues             ReviewIssue[]
+
+  @@map("ai_reviews")
+}
+
+model ReviewIssue {
+  id          String              @id @default(cuid())
+  reviewId    String              @map("review_id")
+  category    ReviewIssueCategory
+  severity    Severity
+  lineStart   Int?                @map("line_start")
+  lineEnd     Int?                @map("line_end")
+  title       String
+  explanation String              @db.Text
+  suggestion  String              @db.Text
+  review      AiReview            @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, category])
+  @@map("review_issues")
+}
+
+model MentorComment {
+  id           String         @id @default(cuid())
+  submissionId String         @map("submission_id")
+  mentorId     String         @map("mentor_id")
+  body         String         @db.Text
+  createdAt    DateTime       @default(now()) @map("created_at")
+  submission   CodeSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  mentor       User           @relation("mentor_comments", fields: [mentorId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([mentorId])
+  @@map("mentor_comments")
+}
+
+model Revision {
+  id            String         @id @default(cuid())
+  submissionId  String         @map("submission_id")
+  sourceCode    String         @map("source_code") @db.Text
+  changeSummary String         @map("change_summary") @db.Text
+  createdAt     DateTime       @default(now()) @map("created_at")
+  submission    CodeSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@map("revisions")
+}
+
+model Exercise {
+  id              String         @id @default(cuid())
+  submissionId    String         @map("submission_id")
+  title           String
+  description     String         @db.Text
+  difficulty      Difficulty
+  expectedConcept String         @map("expected_concept")
+  status          ExerciseStatus @default(ASSIGNED)
+  createdAt       DateTime       @default(now()) @map("created_at")
+  completedAt     DateTime?      @map("completed_at")
+  submission      CodeSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@map("exercises")
+}
+
+model ProgressEvent {
+  id        String            @id @default(cuid())
+  studentId String            @map("student_id")
+  eventType ProgressEventType @map("event_type")
+  metadata  Json
+  createdAt DateTime          @default(now()) @map("created_at")
+  student   User              @relation("student_progress_events", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, createdAt])
+  @@map("progress_events")
+}
+
+model ReviewCategory {
+  id          String              @id @default(cuid())
+  code        ReviewIssueCategory @unique
+  name        String
+  description String              @db.Text
+  isActive    Boolean             @default(true) @map("is_active")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  rubrics     ReviewRubric[]
+
+  @@map("review_categories")
+}
+
+model ReviewRubric {
+  id          String         @id @default(cuid())
+  categoryId  String         @map("category_id")
+  name        String
+  guidance    String         @db.Text
+  minScore    Int            @map("min_score")
+  maxScore    Int            @map("max_score")
+  isActive    Boolean        @default(true) @map("is_active")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  category    ReviewCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([categoryId])
+  @@map("review_rubrics")
+}
