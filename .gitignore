@@ -3,10 +3,13 @@ node_modules/
 coverage/
 dist/
 build/
+playwright-report/
+test-results/
 .env
 .env*.local
 !.env.example
 *.log
+tsconfig.tsbuildinfo
 prisma/dev.db
 uploads/
 tmp/

@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/codementor_test?schema=public"
+  SESSION_SECRET: "ci-secret-kx8m2p9n4v7q3w6e1r5t0y2u8i4o7a3"
+  GEMINI_API_KEY: ""
+  NODE_ENV: "test"
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: codementor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx prisma generate
+
+      - run: npx prisma db push --skip-generate
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/codementor_test?schema=public"
+
+      - run: npx tsx prisma/seed.ts
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/codementor_test?schema=public"
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm run build
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/codementor_test?schema=public"

@@ -63,7 +63,7 @@ export function SubmissionEditorForm({ mode, initialValues, submissionId }: Subm
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-5 rounded-2xl border border-[var(--border)] bg-white p-5">
+    <form onSubmit={handleSubmit} className="grid gap-5 rounded-2xl border border-[var(--border)]/50 bg-[var(--panel)] p-5 shadow-[var(--shadow-sm)]">
       {error ? <ErrorState title="Could not save submission" description={error} /> : null}
 
       <Input

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { sanitizeCode, sanitizeText } from "@/lib/sanitize";
+import { getCurrentUser } from "@/server/auth/session";
 
 const supportedLanguages = ["JAVASCRIPT", "TYPESCRIPT", "PYTHON"] as const;
 const supportedDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"] as const;
@@ -19,41 +20,57 @@ const CreateSubmission = z.object({
 });
 
 export async function GET(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const searchParams = req.nextUrl.searchParams;
   const status = searchParams.get("status") ?? undefined;
   const language = searchParams.get("language") ?? undefined;
   const topic = searchParams.get("topic") ?? undefined;
   const scoreMin = searchParams.get("scoreMin");
   const scoreMax = searchParams.get("scoreMax");
+  const page = Math.max(Number(searchParams.get("page") ?? "1") || 1, 1);
+  const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize") ?? "5") || 5, 1), 20);
 
   const parsedScoreMin = scoreMin ? Number(scoreMin) : undefined;
   const parsedScoreMax = scoreMax ? Number(scoreMax) : undefined;
 
-  const submissions = await prisma.codeSubmission.findMany({
-    where: {
-      studentId: "seed-student",
-      ...(status ? { status: status as (typeof submissionStatuses)[number] | "REVIEWED" | "ARCHIVED" } : {}),
-      ...(language ? { language: language as (typeof supportedLanguages)[number] } : {}),
-      ...(topic ? { topic: { contains: topic, mode: "insensitive" } } : {})
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      language: true,
-      difficulty: true,
-      status: true,
-      topic: true,
-      prompt: true,
-      createdAt: true,
-      submittedAt: true,
-      aiReview: {
-        select: {
-          overallScore: true
+  const studentId = user.role === "STUDENT" ? user.id : (searchParams.get("studentId") ?? undefined);
+
+  const baseWhere = {
+    ...(studentId ? { studentId } : {}),
+    ...(status ? { status: status as (typeof submissionStatuses)[number] | "REVIEWED" | "ARCHIVED" } : {}),
+    ...(language ? { language: language as (typeof supportedLanguages)[number] } : {}),
+    ...(topic ? { topic: { contains: topic, mode: "insensitive" as const } } : {})
+  };
+
+  const [submissions, totalCount] = await Promise.all([
+    prisma.codeSubmission.findMany({
+      where: baseWhere,
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        title: true,
+        language: true,
+        difficulty: true,
+        status: true,
+        topic: true,
+        prompt: true,
+        createdAt: true,
+        submittedAt: true,
+        aiReview: {
+          select: {
+            overallScore: true
+          }
         }
       }
-    }
-  });
+    }),
+    prisma.codeSubmission.count({ where: baseWhere })
+  ]);
 
   const filtered = submissions.filter((submission) => {
     const score = submission.aiReview?.overallScore;
@@ -81,11 +98,20 @@ export async function GET(req: NextRequest) {
       createdAt: submission.createdAt,
       submittedAt: submission.submittedAt,
       reviewScore: submission.aiReview?.overallScore ?? null
-    }))
+    })),
+    page,
+    pageSize,
+    totalCount,
+    totalPages: Math.max(Math.ceil(totalCount / pageSize), 1)
   });
 }
 
 export async function POST(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "STUDENT") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await req.json();
 
   const parse = CreateSubmission.safeParse(body);
@@ -101,7 +127,7 @@ export async function POST(req: NextRequest) {
 
   const submission = await prisma.codeSubmission.create({
     data: {
-      studentId: "seed-student",
+      studentId: user.id,
       title: data.title,
       language: data.language,
       topic: data.topic,
@@ -117,3 +143,4 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ submission }, { status: 201 });
 }
+

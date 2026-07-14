@@ -91,6 +91,7 @@ model User {
   studentAssignments MentorAssignment[] @relation("student_assignments")
   mentorComments     MentorComment[]    @relation("mentor_comments")
   progressEvents     ProgressEvent[]    @relation("student_progress_events")
+  notifications      Notification[]     @relation("user_notifications")
 
   @@map("users")
 }
@@ -281,3 +282,19 @@ model ReviewRubric {
   @@index([categoryId])
   @@map("review_rubrics")
 }
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String   // e.g. "AI_REVIEW_READY", "MENTOR_COMMENT", "EXERCISE_ASSIGNED"
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation("user_notifications", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+

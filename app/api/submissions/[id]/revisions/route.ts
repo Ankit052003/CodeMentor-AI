@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { sanitizeCode, sanitizeText } from "@/lib/sanitize";
+import { getCurrentUser } from "@/server/auth/session";
 
 const maxSourceLength = 20_000;
 
@@ -13,10 +14,15 @@ const CreateRevision = z.object({
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
+  const user = await getCurrentUser();
+  if (!user || user.role !== "STUDENT") {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const submission = await prisma.codeSubmission.findFirst({
     where: {
       id,
-      studentId: "seed-student"
+      studentId: user.id
     }
   });
 
@@ -44,4 +50,4 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
 
   return NextResponse.json({ revision }, { status: 201 });
-}
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { sanitizeCode, sanitizeText } from "@/lib/sanitize";
+import { getCurrentUser } from "@/server/auth/session";
 
 const supportedLanguages = ["JAVASCRIPT", "TYPESCRIPT", "PYTHON"] as const;
 const supportedDifficulties = ["BEGINNER", "INTERMEDIATE", "ADVANCED"] as const;
@@ -20,6 +21,10 @@ const UpdateSubmission = z.object({
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const submission = await prisma.codeSubmission.findUnique({
     where: { id },
@@ -33,15 +38,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (!submission) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  // Authorization check: Students can only view their own submissions.
+  // Mentors and admins can view any.
+  if (user.role === "STUDENT" && submission.studentId !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   return NextResponse.json({ submission });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const existingSubmission = await prisma.codeSubmission.findFirst({
     where: {
       id,
-      studentId: "seed-student"
+      studentId: user.id
     }
   });
 
@@ -84,15 +100,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const existingSubmission = await prisma.codeSubmission.findFirst({
-    where: {
-      id,
-      studentId: "seed-student"
-    }
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const existingSubmission = await prisma.codeSubmission.findUnique({
+    where: { id }
   });
 
   if (!existingSubmission) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Only the student owner or an admin can delete/archive.
+  if (existingSubmission.studentId !== user.id && user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   if (existingSubmission.status === "DRAFT") {
@@ -110,3 +133,4 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   return NextResponse.json({ submission: archivedSubmission });
 }
+
